@@ -1,0 +1,60 @@
+WireDrop — Grasshopper wire-drop component search
+=================================================
+
+Drag a wire off any port, let go over empty canvas, and a panel opens listing
+every component that port can connect to.
+
+Requires Rhino 8 (Windows or macOS).
+
+
+INSTALL
+-------
+
+macOS
+  1. Copy WireDrop.gha into:
+     ~/Library/Application Support/McNeel/Rhinoceros/8.0/Plug-ins/
+        Grasshopper (b45a29b1-4343-4035-989e-044e8580d9cf)/Libraries/
+
+     Quick way to open that folder: in Grasshopper, File > Special Folders >
+     Components Folder.
+
+  2. If macOS blocks it, open Terminal and run:
+     xattr -d com.apple.quarantine "<path to WireDrop.gha>"
+
+  3. Restart Rhino.
+
+Windows
+  1. RIGHT-CLICK WireDrop.gha > Properties > tick "Unblock" > OK.
+     Skipping this is the number one reason a .gha silently fails to load.
+
+  2. Copy it into:
+     %APPDATA%\Grasshopper\Libraries\
+
+     Quick way: in Grasshopper, File > Special Folders > Components Folder.
+
+  3. Restart Rhino.
+
+
+USING IT
+--------
+
+  Drag a port to empty canvas   Opens the panel
+  Type                          Narrows the list
+  Up / Down                     Move selection
+  Left / Right                  Walk the category row
+  Tab                           Widen to the whole component library
+  Enter or click                Place the component and wire it
+  Esc, or click anywhere else   Cancel
+
+Works both directions: drag from an output and you get inputs that accept it;
+drag from an input and you get outputs that produce it. One undo takes back
+both the component and the wire.
+
+The very first drop after starting Rhino may pause for a second while the
+component library is indexed. After that it is instant.
+
+
+UNINSTALL
+---------
+
+Delete WireDrop.gha from the folder above and restart Rhino.
