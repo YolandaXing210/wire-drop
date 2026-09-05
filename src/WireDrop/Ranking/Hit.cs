@@ -1,3 +1,5 @@
+using System;
+using Grasshopper.Kernel;
 using WireDrop.Catalog;
 
 namespace WireDrop.Ranking
@@ -10,6 +12,13 @@ namespace WireDrop.Ranking
         public int Score;
         /// <summary>First row of a component's run — carries the icon and the name.</summary>
         public bool FirstOfGroup;
+        /// <summary>
+        /// Set only on a shortcut row — slider, panel, scribble, point: makes the object
+        /// the typed text implies. Null on every ordinary row, which is built from a proxy.
+        /// </summary>
+        public Func<IGH_DocumentObject> Create;
+        /// <summary>False for a scribble, which has no ports to wire to.</summary>
+        public bool Connects = true;
     }
 
     /// <summary>A band heading drawn between runs of rows.</summary>

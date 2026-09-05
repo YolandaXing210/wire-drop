@@ -8,6 +8,9 @@ namespace WireDrop.Ranking
 {
     internal static class HitBuilder
     {
+        /// <summary>Text score for the component a typed symbol names outright.</summary>
+        const int Promoted = 1000;
+
         /// <param name="dragType">Short type name of the port the wire came from.</param>
         /// <param name="fromInput">True when the drag started at an input, so we want producers.</param>
         /// <param name="query">Search text; empty shows the ranked default.</param>
@@ -20,6 +23,13 @@ namespace WireDrop.Ranking
             var q = (query ?? string.Empty).Trim();
             var hasQuery = q.Length > 0;
             var recent = RecentPicks.For(dragType, fromInput);
+
+            // A lone symbol names a component outright — Grasshopper reads "+" as Addition.
+            // It is promoted within the catalog rather than synthesised, so its ports,
+            // bands, icon and wiring need no special case; it only leads the list.
+            var promoted = Guid.Empty;
+            var promotedId = ShortcutMap.Component(q);
+            if (promotedId != null) Guid.TryParse(promotedId, out promoted);
 
             // Dragging from an output needs components that consume; from an input, ones that produce.
             var wantInputs = !fromInput;
@@ -56,7 +66,9 @@ namespace WireDrop.Ranking
                 var textScore = 0;
                 if (hasQuery)
                 {
-                    textScore = Fuzzy.Score(entry.Name, entry.NickName, entry.Category, entry.SubCategory, q);
+                    textScore = promoted != Guid.Empty && entry.Id == promoted
+                        ? Promoted
+                        : Fuzzy.Score(entry.Name, entry.NickName, entry.Category, entry.SubCategory, q);
                     if (textScore <= 0) continue;
                 }
 
@@ -87,7 +99,11 @@ namespace WireDrop.Ranking
                 groups = groups.Where(g =>
                     string.Equals(g.Entry.Category, category, StringComparison.Ordinal)).ToList();
 
+            // A shortcut is an explicit intent rather than a search, so it leads the list.
+            var implied = Implied.TryBuild(dragType, fromInput, q, showAll, category);
+
             var rows = new List<object>();
+            if (implied != null) rows.Add(implied);
             var currentBand = -1;
             foreach (var g in groups)
             {
@@ -110,8 +126,8 @@ namespace WireDrop.Ranking
             {
                 Rows = rows.ToArray(),
                 Categories = categories,
-                PortCount = groups.Sum(g => g.Ports.Count),
-                ComponentCount = groups.Count,
+                PortCount = groups.Sum(g => g.Ports.Count) + (implied != null ? 1 : 0),
+                ComponentCount = groups.Count + (implied != null ? 1 : 0),
             };
         }
 

@@ -35,6 +35,12 @@ namespace WireDrop.UI
         int _selected = -1;
         int _scroll;
         int _hover = -1;
+        /// <summary>
+        /// Which of the cursor and the selection the description strip is following. The
+        /// last one to move wins: arrows hand it to the selection even while the cursor
+        /// rests on another row, and the cursor takes it back the moment it moves again.
+        /// </summary>
+        bool _hoverLeads;
         bool _showAll;
         string _category;
         KeyEventArgs _lastHandledKey;
@@ -70,7 +76,10 @@ namespace WireDrop.UI
                 Location = new Point(_m.Pad, _m.Pad - 1),
                 Width = _m.Width - _m.Pad * 2,
             };
-            _search.TextChanged += (s, e) => { _category = null; _selected = -1; _scroll = 0; Rebuild(); };
+            _search.TextChanged += (s, e) =>
+            {
+                _category = null; _selected = -1; _scroll = 0; _hoverLeads = false; Rebuild();
+            };
             _search.KeyDown += OnPanelKeyDown;
             KeyDown += OnPanelKeyDown;
             Controls.Add(_search);
@@ -82,7 +91,7 @@ namespace WireDrop.UI
             {
                 TabStop = false,
                 Location = new Point(0, _searchH),
-                Size = new Size(_m.Width, _m.ChipH + _m.ListH + _m.FootH),
+                Size = new Size(_m.Width, _m.ChipH + _m.ListH + _m.HelpH + _m.FootH),
             };
             Controls.Add(_body);
 
@@ -236,7 +245,7 @@ namespace WireDrop.UI
 
         void ResizeToFit()
         {
-            var bodyHeight = _catH + _m.ListH + _m.FootH;
+            var bodyHeight = _catH + _m.ListH + _m.HelpH + _m.FootH;
             if (_body.Height == bodyHeight) return;
             _body.Height = bodyHeight;
             ClientSize = new Size(_m.Width, _searchH + bodyHeight);
@@ -309,7 +318,12 @@ namespace WireDrop.UI
             if (_selected < 0 || !(_hits.Rows[_selected] is Hit hit)) return;
             _closing = true;
             Close();
-            Placement.Insert(_canvas, _source, _fromInput, _dropCanvas, hit.Component, hit.Port, _dragType);
+            if (hit.Create != null)
+                Placement.InsertImplied(_canvas, _source, _fromInput, _dropCanvas,
+                                        hit.Create, hit.Connects);
+            else
+                Placement.Insert(_canvas, _source, _fromInput, _dropCanvas,
+                                 hit.Component, hit.Port, _dragType);
         }
 
         // ---------- keyboard ----------
@@ -331,6 +345,7 @@ namespace WireDrop.UI
             _lastHandledKey = e;
             e.Handled = true;
             e.SuppressKeyPress = true;
+            _hoverLeads = false;
 
             switch (action)
             {
@@ -380,6 +395,7 @@ namespace WireDrop.UI
 
             Metrics M => _o._m;
             Rectangle ListRect => new Rectangle(0, _o._catH, Width, M.ListH);
+            Rectangle HelpRect => new Rectangle(0, _o._catH + M.ListH, Width, M.HelpH);
 
             int TotalHeight => _o._offsets.Length > 0 ? _o._offsets[_o._offsets.Length - 1] : 0;
             bool HasScrollbar => ScrollBar.Needed(TotalHeight, M.ListH);
@@ -424,6 +440,9 @@ namespace WireDrop.UI
                 if (overThumb != _thumbHot) { _thumbHot = overThumb; Invalidate(); }
 
                 var index = overThumb ? -1 : RowAt(e.Location);
+                // Moving over a row takes the description strip back from the arrow keys,
+                // even when it is the same row the cursor was already resting on.
+                if (index >= 0 && !_o._hoverLeads) { _o._hoverLeads = true; Invalidate(); }
                 if (index != _o._hover) { _o._hover = index; Invalidate(); }
             }
 
@@ -508,6 +527,7 @@ namespace WireDrop.UI
                 g.Clear(_o._p.Back);
                 PaintCategories(g, _o._p);
                 PaintList(g, _o._p);
+                PaintHelp(g, _o._p);
                 PaintFooter(g, _o._p);
             }
 
@@ -685,6 +705,62 @@ namespace WireDrop.UI
                 g.DrawLine(pen, list.Left, top + M.HeadH - 1, list.Right, top + M.HeadH - 1);
                 g.DrawString(header.Label.ToUpperInvariant(), M.Small, dim,
                              M.Pad, top + (M.HeadH - M.Small.Height) / 2f);
+            }
+
+            /// <summary>
+            /// Grasshopper's own description of whatever the eye is on: the row under the
+            /// cursor while there is one, and the selected row otherwise — so leaving the
+            /// list puts back the description of the thing Enter would place. Nothing is
+            /// fetched here; the text was read off the object proxies when the catalog was
+            /// built, so it costs a lookup, not a load.
+            /// </summary>
+            void PaintHelp(Graphics g, Palette p)
+            {
+                var r = HelpRect;
+                using (var b = new SolidBrush(p.Strip)) g.FillRectangle(b, r);
+                using (var pen = new Pen(p.Line)) g.DrawLine(pen, r.Left, r.Top, r.Right, r.Top);
+
+                var rows = _o._hits.Rows;
+                var index = _o._hoverLeads && _o._hover >= 0 ? _o._hover : _o._selected;
+                if (index < 0 || index >= rows.Length || !(rows[index] is Hit hit)) return;
+
+                var x = M.Pad;
+                var width = r.Width - M.Pad * 2;
+                // Set in the row font, not the small one: this is text to be read.
+                var line = M.Body.Height;
+                var top = r.Top + M.Pad / 2f;
+
+                var description = hit.Component?.Description;
+                if (!string.IsNullOrWhiteSpace(description))
+                {
+                    using var ink = new SolidBrush(p.Text);
+                    var wrap = new StringFormat { Trimming = StringTrimming.EllipsisWord };
+                    g.DrawString(description.Trim(), M.Body, ink,
+                                 new RectangleF(x, top, width, line * 2), wrap);
+                }
+
+                var port = PortLine(hit);
+                if (port == null) return;
+
+                using var dim = new SolidBrush(p.Dim);
+                var clip = new StringFormat
+                {
+                    Trimming = StringTrimming.EllipsisCharacter,
+                    FormatFlags = StringFormatFlags.NoWrap,
+                };
+                g.DrawString(port, M.Body, dim,
+                             new RectangleF(x, top + line * 2, width, line), clip);
+            }
+
+            /// <summary>The port's own name and description, when it has anything to say.</summary>
+            static string PortLine(Hit hit)
+            {
+                var name = hit.Port?.Name;
+                if (string.IsNullOrWhiteSpace(name)) return null;
+                var description = hit.Port?.Description;
+                return string.IsNullOrWhiteSpace(description)
+                    ? name
+                    : name + " — " + description.Trim();
             }
 
             void PaintFooter(Graphics g, Palette p)

@@ -10,6 +10,11 @@ namespace WireDrop.UI
     internal readonly struct LayoutMetrics
     {
         public const int VisibleRows = 14;
+        /// <summary>
+        /// Two lines for the component's own description, one for the port's — measured in
+        /// body lines, since the strip is set in the same font as the rows above it.
+        /// </summary>
+        public const int HelpLines = 3;
 
         public readonly int Pad;
         public readonly int RowH;
@@ -19,6 +24,7 @@ namespace WireDrop.UI
         public readonly int FootH;
         public readonly int ListH;
         public readonly int IconSize;
+        public readonly int HelpH;
 
         LayoutMetrics(int bodyHeight, int smallHeight)
         {
@@ -33,6 +39,7 @@ namespace WireDrop.UI
             FootH = Math.Max(19, small + 6);
             ListH = RowH * VisibleRows;
             IconSize = Math.Min(24, Math.Max(16, RowH - 8));
+            HelpH = line * HelpLines + Pad;
         }
 
         public static LayoutMetrics From(int bodyHeight, int smallHeight) =>

@@ -36,8 +36,8 @@ dotnet build -c Release -p:RhinoSystemDir="/path/to/Rhino/System"
 
 | File | For |
 |---|---|
-| `wiredrop-0.1.0-rh8_0-any.yak` | Rhino's Package Manager |
-| `WireDrop-0.1.0.zip` | Manual install — contains the `.gha` and `INSTALL.txt` |
+| `wiredrop-0.2.0-rh8_0-any.yak` | Rhino's Package Manager |
+| `WireDrop-0.2.0.zip` | Manual install — contains the `.gha` and `INSTALL.txt` |
 
 A friend installs the `.yak` with Rhino running:
 
@@ -60,14 +60,18 @@ one-way, public action, so it is not part of `package.sh`.
 
 | | |
 |---|---|
+| Drag a port | Outlines everything on screen that could take the wire — green, yellow, blue by fit |
 | Drag a port to empty canvas | Opens the panel |
 | Type | Narrows the list |
+| Type a shortcut | `5` slider, `"x` panel, `~x` scribble, `3,4` point, `+` Addition |
 | <kbd>↑</kbd> <kbd>↓</kbd> | Move selection |
 | <kbd>PgUp</kbd> <kbd>PgDn</kbd> | Jump a screen |
 | <kbd>←</kbd> <kbd>→</kbd> | Walk the category row |
 | <kbd>Tab</kbd> | Widen past compatible components to the whole library |
 | <kbd>Enter</kbd> / click | Place the component and wire it |
+| Move, then click | Choose where it lands — it rides the cursor until you click |
 | <kbd>Esc</kbd> | Cancel |
+| Hover a row | Describes that one; the arrows take the strip back to the selection |
 
 Works in both directions: drag from an **output** and the list shows inputs that
 accept it; drag from an **input** and it shows outputs that produce it. One
@@ -145,6 +149,123 @@ over its `NickName`. Creating the object ourselves bypassed that, so placed comp
 showed `C` and `N` while the rest of the canvas showed `Curve` and `Count`.
 `Placement.ApplyFullNames` now performs the same step.
 
+### Shortcuts
+
+Grasshopper's canvas search reads a few leading characters as *make me this object*
+rather than *find me this name* — the grammar inside
+`GH_PopupSearchDialog.CreateImpliedObject`. WireDrop answers to the same ones:
+
+| Type | You get |
+|---|---|
+| `5`, `0.25`, `-2`, `2+3` | Number Slider set to that value |
+| `0<5<10` | Number Slider with that range |
+| `3,4` or `1,2,3` | Point parameter holding that point |
+| `"note` or `//note` | Panel containing *note* |
+| `~note` | Scribble on the canvas reading *note* |
+| `+` `-` `*` `/` `\` `%` `&` `<` `>` `=` | Whichever component Grasshopper names with that symbol |
+| `f(` | Expression |
+
+None of the parsing is ours. `HarvestRange` and a numeric `ParseExpression` are the two
+tests Grasshopper makes before offering a slider — it tries the first early and the second
+as its last resort, and testing only the first hid bare numbers entirely, since
+`HarvestRange("5")` is false. `SetInitCode` then configures the slider and `ToPoint3d`
+reads the point, so what you type means what it means there, including the range
+Grasshopper picks around a bare value: 5 becomes 0 to 10, -2 becomes -10 to 0. The row
+shows that range, so what Enter will make is on screen before you press it.
+
+The symbol shortcuts are not synthesised. The guid Grasshopper names is looked up in the
+catalog and that component is promoted to the top of the list, so it arrives with its own
+icon, its real ports and ordinary wiring — and a guid a future Grasshopper drops costs a
+missing row rather than a wrong one.
+
+A slider and a point only produce a value, so they answer only a wire pulled off an
+**input**. A panel takes anything and hands back text, so it suits either direction. A
+scribble has no ports at all: it is placed where the wire was dropped and nothing is
+connected to it. Full names are not applied to any of them — on these objects the label
+is the content, so copying the name over it would erase what was typed.
+
+Three deliberate differences from Grasshopper:
+
+- **A digit is required before a slider is offered.** Grasshopper's parser resolves
+  constants, so `pi` and `e` are numeric. Harmless in its search box, where every hit is
+  scored and sorted, but here the top row is the one Enter takes, and someone typing `pi`
+  is reaching for Pipe.
+- **`3, 4` counts as a point.** Grasshopper wants the digits either side of the comma
+  adjacent; the coordinates parse either way and a space after a comma is natural to type.
+- **Time, date and `PI` are left out.** Each sets a parsed value on one specific
+  parameter, and mid-wire nobody is reaching for a date.
+
+### Where the wire could go
+
+While the wire is still on the cursor, every object on screen that could take it is
+outlined, so the answer is visible before the button is released rather than only
+afterwards in the panel. The colour says how well it fits:
+
+| | |
+|---|---|
+| **Green** | Direct — same type, or a lossless cast like Circle→Curve |
+| **Yellow** | Converts |
+| **Blue** | A port that simply takes anything |
+
+All three are solid. Grasshopper's casting is permissive enough that one colour would
+light up most of the canvas and say nothing, so the distinction is carried by hue rather
+than by fading the weaker fits — a blue outline is as legible as a green one, and which is
+which is still obvious at a glance. What cannot connect is not drawn at all.
+
+The set is worked out once when the drag starts, since a document does not change
+mid-drag, and only tested for visibility per frame, since the viewport does. Nothing in
+the document is touched: the outlines are drawn straight onto the canvas in
+`CanvasPostPaintObjects`, so a drag that goes nowhere leaves no trace.
+
+Whatever state that event hands over the graphics in, `Viewport.ApplyProjection` puts it
+into canvas coordinates — it assigns the transform rather than compounding it, and it is
+how Grasshopper's own window-select interaction draws. The pen width is divided by the
+zoom so the outline stays the same weight on screen however far out the canvas is.
+
+### Choosing where it lands
+
+A placed object stays on the cursor until you click, so the wire picks its own spot rather
+than landing wherever you happened to let go — a node in Blender's shader editor behaves
+the same way. <kbd>Esc</kbd> puts it back at the point the wire was dropped, which is
+where it would have gone before any of this; it is never left half-placed.
+
+What follows the cursor is the real object, already in the document and already wired, not
+a drawn ghost. That is what makes it cheap and what makes it safe: moving an object only
+expires its layout, so nothing is recomputed between the drop and the click, and the wire
+follows on its own because Grasshopper draws wires from the grips on every frame. There is
+nothing to commit and nothing to clean up — the click just stops the following, and one
+<kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Z</kbd> still takes back the object and the wire
+together, exactly as when placement was immediate.
+
+Grasshopper has no interaction class for this. Its public ones cover dragging, wiring,
+panning, zooming and rubber-band selection, but nothing that carries a new object to a
+click, so this is the plugin's own — a canvas `MouseMove` that re-hangs the object on the
+cursor by the grip being wired, and a `MouseDown` that lets go. Grasshopper's own handlers
+run first and read that click as a click on the object, which selects it: the right thing
+to be left holding.
+
+Set `WireDrop.FollowCursor` to false in Grasshopper's settings to go back to placing at
+the drop point.
+
+### The description strip
+
+Under the list is Grasshopper's own description of whatever the eye is on. Two lines for
+the component, one for the port, set in the same font as the rows above — it is text meant
+to be read, not a caption. Both are taken off the object proxies when the catalog was
+built, so showing them costs a lookup rather than a load.
+
+Whichever of the cursor and the selection moved last decides what it describes. Hovering a
+row describes that row; pressing an arrow key hands the strip to the selection even though
+the cursor is still resting on some other row, since the selection is now the thing
+<kbd>Enter</kbd> would place; moving the mouse over a row takes it back. Leaving the list
+altogether falls back to the selection for the same reason. Letting hover win outright
+was wrong in exactly one case, and it was the common one: reading down the list with the
+arrows while the mouse sits where it was left.
+
+The strip is always there, even with nothing to say. Sizing it to its content would move
+the list under the cursor every time the mouse crossed a row, which is the same reason the
+category row keeps a fixed height while you type.
+
 ### Band headings
 
 Only one heading is pinned at a time — the band the top of the list is currently inside.
@@ -206,7 +327,7 @@ src/WireDrop/
   Placement.cs              creates the component, aligns the grip, wires, records undo
   Interop/                  bound private fields of GH_WireInteraction
   Catalog/                  component + port map, frequency prior, recent picks
-  Ranking/                  cast scores, fuzzy match, banding and grouping
+  Ranking/                  cast scores, fuzzy match, banding, grouping, shortcuts
   UI/                       the panel and its palette
 ```
 

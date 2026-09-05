@@ -18,6 +18,8 @@
     <Compile Include="../../src/WireDrop/Ranking/TypeCompat.cs" />
     <Compile Include="../../src/WireDrop/Ranking/Fuzzy.cs" />
     <Compile Include="../../src/WireDrop/Ranking/CategoryOrder.cs" />
+    <Compile Include="../../src/WireDrop/Ranking/SliderText.cs" />
+    <Compile Include="../../src/WireDrop/Ranking/ShortcutMap.cs" />
     <Compile Include="../../src/WireDrop/UI/KeyMap.cs" />
     <Compile Include="../../src/WireDrop/UI/LayoutMetrics.cs" />
     <Compile Include="../../src/WireDrop/UI/ChipFlow.cs" />

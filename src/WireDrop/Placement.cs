@@ -5,6 +5,7 @@ using Grasshopper;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Attributes;
+using Grasshopper.Kernel.Special;
 using WireDrop.Catalog;
 
 namespace WireDrop
@@ -28,31 +29,76 @@ namespace WireDrop
                 obj.CreateAttributes();
                 if (obj.Attributes == null) return;
                 ApplyFullNames(obj);
-                obj.Attributes.Pivot = dropPoint;
 
-                // Dragging from an output needs the new component's input, and vice versa.
-                var wantInput = !fromInput;
-
-                // Record before mutating so one Ctrl+Z takes back the component and the wire.
-                if (fromInput) doc.UndoUtil.RecordWireEvent("Wire Drop", source);
-                doc.UndoUtil.RecordAddObjectEvent("Wire Drop", obj);
-                if (fromInput) doc.UndoUtil.MergeRecords(2);
-
-                doc.AddObject(obj, false);
-
-                var target = ResolveParam(obj, wantInput, port.Index);
-                if (target == null) return;
-
-                AlignGrip(obj, target, wantInput, dropPoint);
-
-                if (fromInput) source.AddSource(target);
-                else target.AddSource(source);
-
+                Finish(canvas, doc, source, fromInput, dropPoint, obj, port.Index, true);
                 RecentPicks.Record(dragType, fromInput, entry.Id);
-
-                doc.NewSolution(false);
-                canvas.Refresh();
             });
+        }
+
+        /// <summary>
+        /// Places the object a typed shortcut implies — slider, panel, scribble, point —
+        /// and wires it in. The factory travels on the row, so all of the parsing stays
+        /// with Grasshopper's own parsers in <see cref="Ranking.Implied"/>. Full names are
+        /// deliberately not applied: on these objects the label is the content, not a
+        /// component name, so copying Name over NickName would overwrite what was typed.
+        /// </summary>
+        public static void InsertImplied(GH_Canvas canvas, IGH_Param source, bool fromInput,
+                                         PointF dropPoint, Func<IGH_DocumentObject> create,
+                                         bool connects)
+        {
+            Log.Guard("implied-placement", () =>
+            {
+                var doc = canvas?.Document;
+                if (doc == null || source == null || create == null) return;
+
+                var obj = create();
+                if (obj == null) return;
+
+                obj.CreateAttributes();
+                if (obj.Attributes == null) return;
+
+                Finish(canvas, doc, source, fromInput, dropPoint, obj, 0, connects);
+            });
+        }
+
+        /// <summary>
+        /// Adds the object at the drop point, wires it if it has anything to wire, and
+        /// records both as one undo step.
+        /// </summary>
+        static void Finish(GH_Canvas canvas, GH_Document doc, IGH_Param source, bool fromInput,
+                           PointF dropPoint, IGH_DocumentObject obj, int portIndex, bool connects)
+        {
+            obj.Attributes.Pivot = dropPoint;
+
+            // Record before mutating so one Ctrl+Z takes back the object and the wire. Only
+            // a drag from an input changes an existing object; the other direction is all
+            // inside the new one, which the add event already covers.
+            var rewiring = connects && fromInput;
+            if (rewiring) doc.UndoUtil.RecordWireEvent("Wire Drop", source);
+            doc.UndoUtil.RecordAddObjectEvent("Wire Drop", obj);
+            if (rewiring) doc.UndoUtil.MergeRecords(2);
+
+            doc.AddObject(obj, false);
+
+            // Dragging from an output needs the new object's input, and vice versa.
+            var wantInput = !fromInput;
+            IGH_Param target = null;
+            if (connects)
+            {
+                target = ResolveParam(obj, wantInput, portIndex);
+                if (target != null)
+                {
+                    AlignGrip(obj, target, wantInput, dropPoint);
+                    if (fromInput) source.AddSource(target);
+                    else target.AddSource(source);
+                }
+            }
+
+            doc.NewSolution(false);
+            canvas.Refresh();
+
+            // Placed and wired, but not yet settled: it rides the cursor until a click.
+            FollowPlacement.Begin(canvas, obj, target, wantInput, dropPoint);
         }
 
         /// <summary>
@@ -95,7 +141,7 @@ namespace WireDrop
         /// Nudges the whole component so the port we are wiring sits exactly under the
         /// cursor — the wire then reads as one straight run instead of doubling back.
         /// </summary>
-        static void AlignGrip(IGH_DocumentObject obj, IGH_Param target, bool wantInput, PointF dropPoint)
+        internal static void AlignGrip(IGH_DocumentObject obj, IGH_Param target, bool wantInput, PointF dropPoint)
         {
             try
             {

@@ -8,6 +8,8 @@ namespace WireDrop.Catalog
         public int Index;
         public string Name;
         public string NickName;
+        /// <summary>Grasshopper's own description of this port.</summary>
+        public string Description;
         /// <summary>Grasshopper's goo type for the port, e.g. GH_Curve.</summary>
         public Type GooType;
         /// <summary>Short name used by the cast table, e.g. "Curve".</summary>

@@ -20,10 +20,15 @@ namespace WireDrop
     internal sealed class CanvasWatcher
     {
         readonly GH_Canvas _canvas;
+        readonly DropTargets _targets;
         bool _armed;
         WireDragState _state;
 
-        CanvasWatcher(GH_Canvas canvas) { _canvas = canvas; }
+        CanvasWatcher(GH_Canvas canvas)
+        {
+            _canvas = canvas;
+            _targets = DropTargets.Attach(canvas);
+        }
 
         public static void Attach(GH_Canvas canvas)
         {
@@ -40,7 +45,11 @@ namespace WireDrop
             };
         }
 
-        void OnMouseDown(object sender, MouseEventArgs e) => _armed = false;
+        void OnMouseDown(object sender, MouseEventArgs e)
+        {
+            _armed = false;
+            _targets.Hide();
+        }
 
         void OnMouseMove(object sender, MouseEventArgs e)
         {
@@ -49,6 +58,9 @@ namespace WireDrop
             {
                 _state = state;
                 _armed = true;
+
+                // Say where this wire could go while it is still on the cursor.
+                _targets.Show(state.Source, state.FromInput);
             }
         }
 
@@ -56,6 +68,7 @@ namespace WireDrop
         {
             if (!_armed) return;
             _armed = false;
+            _targets.Hide();
 
             Log.Guard("drop", () =>
             {

@@ -11,6 +11,8 @@ namespace WireDrop.Catalog
         public string NickName;
         public string Category;
         public string SubCategory;
+        /// <summary>Grasshopper's own description of the component, shown under the list.</summary>
+        public string Description;
         public Bitmap Icon;
         public GH_Exposure Exposure;
         /// <summary>Grasshopper hides these from the ribbon; they rank below everything else.</summary>

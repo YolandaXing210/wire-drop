@@ -38,17 +38,41 @@ Windows
 USING IT
 --------
 
+  Drag a port                   Outlines everything on screen that could take
+                                the wire: green fits directly, yellow needs a
+                                conversion, blue takes anything at all
   Drag a port to empty canvas   Opens the panel
   Type                          Narrows the list
   Up / Down                     Move selection
   Left / Right                  Walk the category row
   Tab                           Widen to the whole component library
   Enter or click                Place the component and wire it
+  Move, then click              Choose where it lands - the new object rides
+                                the cursor until you click. Esc puts it back
+                                at the point the wire was dropped
   Esc, or click anywhere else   Cancel
+
+Under the list is Grasshopper's own description of whatever the eye is on:
+the row under the cursor, or the selected row once the arrow keys take over.
 
 Works both directions: drag from an output and you get inputs that accept it;
 drag from an input and you get outputs that produce it. One undo takes back
 both the component and the wire.
+
+
+SHORTCUTS
+---------
+
+Typing certain things makes the object they stand for rather than searching for
+a name, the same way Grasshopper's own canvas search reads them:
+
+  5   0.25   -2   2+3          Number Slider set to that value
+  0<5<10                       Number Slider with that range
+  3,4   or   1,2,3             Point parameter holding that point
+  "note   or   //note          Panel containing "note"
+  ~note                        Scribble on the canvas reading "note"
+  + - * / \ % & < > =          The component Grasshopper names with that symbol
+  f(                           Expression
 
 The very first drop after starting Rhino may pause for a second while the
 component library is indexed. After that it is instant.

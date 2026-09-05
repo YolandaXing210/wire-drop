@@ -23,6 +23,7 @@ namespace WireDrop.UI
         public int ChipGap => _layout.ChipGap;
         public int ListH => _layout.ListH;
         public int FootH => _layout.FootH;
+        public int HelpH => _layout.HelpH;
         public int IconSize => _layout.IconSize;
         public int Pad => _layout.Pad;
         public readonly int Width;

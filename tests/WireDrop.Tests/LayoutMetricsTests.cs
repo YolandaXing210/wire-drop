@@ -29,6 +29,23 @@ public class LayoutMetricsTests
     }
 
     [Fact]
+    public void TheDescriptionStripGrowsWithTheFont()
+    {
+        Assert.True(Large().HelpH > Default().HelpH);
+    }
+
+    [Fact]
+    public void TheDescriptionStripAlwaysHoldsItsThreeLines()
+    {
+        foreach (var h in new[] { 9, 11, 13, 16, 20, 26, 34 })
+        {
+            var m = LayoutMetrics.From(h, h - 2);
+            Assert.True(m.HelpH >= h * LayoutMetrics.HelpLines,
+                        $"help {m.HelpH} must hold {LayoutMetrics.HelpLines} lines of {h}");
+        }
+    }
+
+    [Fact]
     public void TinyFontsStillGetLegibleRows()
     {
         var m = LayoutMetrics.From(1, 1);
