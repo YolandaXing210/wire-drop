@@ -39,13 +39,20 @@ dotnet build -c Release -p:RhinoSystemDir="/path/to/Rhino/System"
 | `wiredrop-0.3.0-rh8_0-any.yak` | Rhino's Package Manager |
 | `WireDrop-0.3.0.zip` | Manual install — contains the `.gha` and `INSTALL.txt` |
 
-A friend installs the `.yak` with Rhino running:
+The zip is the one to hand to someone who would rather not open a terminal: unzip, drop
+the `.gha` into Grasshopper's Components folder (*File > Special Folders*), restart Rhino.
+
+The `.yak` installs through Rhino's package manager, which is tidier to upgrade and remove
+later. It is not on McNeel's server, so `--source .` points yak at the folder holding the
+file instead — `wiredrop` there is the package name, not the file name:
 
 ```
+cd <folder holding the .yak>
 "/Applications/Rhino 8.app/Contents/Resources/bin/yak" install --source . wiredrop
 ```
 
-or on Windows, `"C:\Program Files\Rhino 8\System\yak.exe"`. Then restart Rhino.
+or on Windows, `"C:\Program Files\Rhino 8\System\yak.exe"`. Then restart Rhino;
+`yak uninstall wiredrop` takes it away again.
 
 The `rh8_0` tag means any Rhino 8, Windows or macOS. It comes from the Grasshopper
 version the plugin compiles against — `GrasshopperVersion` in the csproj, deliberately
