@@ -38,9 +38,10 @@ Windows
 USING IT
 --------
 
-  Drag a port                   Outlines everything on screen that could take
-                                the wire: green fits directly, yellow needs a
-                                conversion, blue takes anything at all
+  Drag a port                   Outlines every object on screen that takes the
+                                wire as it is, with a dot on each port that
+                                does. Ports that would convert it on the way in
+                                are deliberately not shown
   Drag a port to empty canvas   Opens the panel
   Type                          Narrows the list
   Up / Down                     Move selection

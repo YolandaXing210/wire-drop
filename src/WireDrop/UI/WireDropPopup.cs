@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
+using Grasshopper;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 using WireDrop.Catalog;
@@ -25,6 +26,8 @@ namespace WireDrop.UI
         readonly PointF _dropCanvas;
         readonly Palette _p = Palette.Current();
         readonly Metrics _m = new Metrics();
+        /// <summary>Read once when the panel opens: the wire cannot change while it is up.</summary>
+        readonly ValueCast _values;
 
         readonly TextBox _search;
         readonly BodyPanel _body;
@@ -51,6 +54,15 @@ namespace WireDrop.UI
         int _catH;
         readonly Dictionary<bool, int> _reservedCatH = new Dictionary<bool, int>();
 
+        /// <summary>
+        /// Whether the category row wears icons rather than names. Not a setting of ours:
+        /// it follows the one Grasshopper draws its own ribbon tabs by, so the panel reads
+        /// the way the ribbon above it already does.
+        /// </summary>
+        readonly bool _categoryIcons;
+        readonly Dictionary<string, Bitmap> _categoryIcon =
+            new Dictionary<string, Bitmap>(StringComparer.Ordinal);
+
         WireDropPopup(GH_Canvas canvas, IGH_Param source, bool fromInput, PointF dropCanvas)
         {
             _canvas = canvas;
@@ -58,6 +70,8 @@ namespace WireDrop.UI
             _fromInput = fromInput;
             _dropCanvas = dropCanvas;
             _dragType = TypeCompat.ShortName(SafeType(source));
+            _values = ValueCast.For(source, fromInput);
+            _categoryIcons = Safe(() => CentralSettings.RibbonDrawTabIcons, false);
 
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.Manual;
@@ -99,6 +113,24 @@ namespace WireDrop.UI
         }
 
         static Type SafeType(IGH_Param p) { try { return p?.Type; } catch { return null; } }
+
+        static T Safe<T>(Func<T> get, T fallback) { try { return get(); } catch { return fallback; } }
+
+        /// <summary>
+        /// The icon Grasshopper's ribbon uses for a category, or null when the row is in
+        /// names mode, when the category is the All chip, or when whoever registered the
+        /// category never gave one — a third-party tab without an icon keeps its name
+        /// rather than becoming a blank chip.
+        /// </summary>
+        Bitmap CategoryIcon(string category)
+        {
+            if (!_categoryIcons || string.IsNullOrEmpty(category)) return null;
+            if (_categoryIcon.TryGetValue(category, out var known)) return known;
+
+            var icon = Safe(() => Instances.ComponentServer?.GetCategoryIcon(category), null);
+            _categoryIcon[category] = icon;
+            return icon;
+        }
 
         public static void ShowFor(GH_Canvas canvas, IGH_Param source, bool fromInput,
                                    PointF dropCanvas, Point dropControl)
@@ -184,7 +216,7 @@ namespace WireDrop.UI
 
         void Rebuild()
         {
-            _hits = HitBuilder.Build(_dragType, _fromInput, _search.Text, _showAll, _category);
+            _hits = HitBuilder.Build(_dragType, _fromInput, _search.Text, _showAll, _category, _values);
             LayoutCategories();
             var offsets = new int[_hits.Rows.Length + 1];
             for (int i = 0; i < _hits.Rows.Length; i++)
@@ -203,15 +235,10 @@ namespace WireDrop.UI
         /// </summary>
         void LayoutCategories()
         {
-            var labels = new List<string> { AllLabel };
             var names = new List<string> { null };
-            foreach (var c in _hits.Categories)
-            {
-                labels.Add(c.Name);
-                names.Add(c.Name);
-            }
+            foreach (var c in _hits.Categories) names.Add(c.Name);
 
-            var widths = labels.Select(ChipWidth).ToArray();
+            var widths = names.Select(ChipWidth).ToArray();
             _chipBounds = ChipFlow.Arrange(widths, _m.Width, _m.ChipH, _m.ChipGap, _m.Pad, 5);
             _chipNames = names.ToArray();
 
@@ -229,8 +256,8 @@ namespace WireDrop.UI
         {
             if (_reservedCatH.TryGetValue(_showAll, out var cached)) return cached;
 
-            var unfiltered = HitBuilder.Build(_dragType, _fromInput, string.Empty, _showAll, null);
-            var widths = new List<int> { ChipWidth(AllLabel) };
+            var unfiltered = HitBuilder.Build(_dragType, _fromInput, string.Empty, _showAll, null, _values);
+            var widths = new List<int> { ChipWidth(null) };
             foreach (var c in unfiltered.Categories) widths.Add(ChipWidth(c.Name));
 
             var arranged = ChipFlow.Arrange(widths.ToArray(), _m.Width, _m.ChipH, _m.ChipGap, _m.Pad, 5);
@@ -241,7 +268,11 @@ namespace WireDrop.UI
 
         const string AllLabel = "All";
 
-        int ChipWidth(string label) => Metrics.Measure(label, _m.Small) + 12;
+        /// <summary>Square for an icon, wide enough for the name otherwise.</summary>
+        int ChipWidth(string category) =>
+            CategoryIcon(category) != null
+                ? _m.ChipH + 4
+                : Metrics.Measure(category ?? AllLabel, _m.Small) + 12;
 
         void ResizeToFit()
         {
@@ -541,15 +572,29 @@ namespace WireDrop.UI
                 var names = _o._chipNames;
                 for (int i = 0; i < bounds.Length && i < names.Length; i++)
                 {
-                    var label = names[i] ?? AllLabel;
                     var selected = string.Equals(_o._category, names[i], StringComparison.Ordinal);
-                    DrawChip(g, p, bounds[i], label, selected);
+                    DrawChip(g, p, bounds[i], names[i], selected);
                 }
             }
 
-            void DrawChip(Graphics g, Palette p, Rectangle rect, string text, bool selected)
+            void DrawChip(Graphics g, Palette p, Rectangle rect, string category, bool selected)
             {
                 using (var b = new SolidBrush(selected ? p.ChipSel : p.Chip)) FillRounded(g, b, rect, 3);
+
+                var icon = _o.CategoryIcon(category);
+                if (icon != null)
+                {
+                    var side = Math.Min(rect.Height - 4, rect.Width - 4);
+                    try
+                    {
+                        g.DrawImage(icon, new Rectangle(rect.X + (rect.Width - side) / 2,
+                                                        rect.Y + (rect.Height - side) / 2, side, side));
+                    }
+                    catch { }
+                    return;
+                }
+
+                var text = category ?? AllLabel;
                 using var br = new SolidBrush(selected ? p.ChipSelText : p.ChipText);
                 var fmt = new StringFormat
                 {

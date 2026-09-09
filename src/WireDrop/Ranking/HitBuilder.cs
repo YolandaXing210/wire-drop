@@ -16,8 +16,12 @@ namespace WireDrop.Ranking
         /// <param name="query">Search text; empty shows the ranked default.</param>
         /// <param name="showAll">Tab widens past the compatible set to the whole library.</param>
         /// <param name="category">Category row filter, or null for all.</param>
+        /// <param name="values">
+        /// What is actually on the wire, when the dragged port's declared type would not
+        /// say. Null leaves the ranking to the type table alone.
+        /// </param>
         public static HitList Build(string dragType, bool fromInput, string query,
-                                    bool showAll, string category)
+                                    bool showAll, string category, ValueCast values = null)
         {
             var catalog = ComponentCatalog.Instance;
             var q = (query ?? string.Empty).Trim();
@@ -47,6 +51,7 @@ namespace WireDrop.Ranking
                     var score = fromInput
                         ? TypeCompat.Score(port.TypeName, dragType)   // port produces -> our input takes
                         : TypeCompat.Score(dragType, port.TypeName);  // our output -> port takes
+                    if (values != null) score = values.Apply(score, port.GooType);
                     if (score <= 0)
                     {
                         if (!showAll) continue;
@@ -110,7 +115,11 @@ namespace WireDrop.Ranking
                 if (!hasQuery && g.Band != currentBand)
                 {
                     currentBand = g.Band;
-                    rows.Add(new BandHeader { Band = g.Band, Label = TypeCompat.BandLabel(g.Band) });
+                    rows.Add(new BandHeader
+                    {
+                        Band = g.Band,
+                        Label = TypeCompat.BandLabel(g.Band, values != null),
+                    });
                 }
                 for (int i = 0; i < g.Ports.Count; i++)
                     rows.Add(new Hit

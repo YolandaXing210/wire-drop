@@ -21,30 +21,30 @@ namespace WireDrop.UI
     internal sealed class DropTargets
     {
         /// <summary>
-        /// One solid colour per band, all fully opaque: green fits directly, yellow needs a
-        /// conversion, blue is a port that simply takes anything. Colour carries the
-        /// distinction rather than opacity, so a weak fit is as legible as a strong one and
-        /// which is which is still obvious at a glance. All three read on either canvas skin.
+        /// One colour, one meaning: the value goes in as it is. Anything that would have to
+        /// be converted on the way is not outlined at all, so what is green is what will
+        /// connect and do exactly what it looks like.
         /// </summary>
-        static readonly Color[] Ink =
-        {
-            Color.FromArgb(55, 125, 220),    // 0 — takes anything
-            Color.FromArgb(240, 190, 20),    // 1 — converts
-            Color.FromArgb(60, 175, 70),     // 2 — direct
-        };
+        static readonly Color Green = Color.FromArgb(60, 175, 70);
 
         readonly GH_Canvas _canvas;
         readonly List<Target> _targets = new List<Target>();
         IGH_Param _source;
+        ValueCast _values;
+        ValueProbe _probe;
         bool _fromInput;
         bool _built;
 
         readonly struct Target
         {
             public readonly IGH_Attributes Attributes;
-            /// <summary>2 direct, 1 converts, 0 generic — green, yellow, blue.</summary>
-            public readonly int Band;
-            public Target(IGH_Attributes attributes, int band) { Attributes = attributes; Band = band; }
+            /// <summary>The ports that take it — one dot each, so which is never a guess.</summary>
+            public readonly IGH_Param[] Ports;
+            public Target(IGH_Attributes attributes, IGH_Param[] ports)
+            {
+                Attributes = attributes;
+                Ports = ports;
+            }
         }
 
         DropTargets(GH_Canvas canvas) { _canvas = canvas; }
@@ -76,6 +76,8 @@ namespace WireDrop.UI
             if (!_built && _targets.Count == 0) return;
             _built = false;
             _source = null;
+            _values = null;
+            _probe = null;
             _targets.Clear();
             try { _canvas.Invalidate(); } catch { }
         }
@@ -90,43 +92,78 @@ namespace WireDrop.UI
 
             var dragType = TypeCompat.ShortName(SafeType(_source));
             var owner = TopLevel(_source);
+            _values = ValueCast.For(_source, _fromInput);
+            _probe = ValueProbe.For(_source, _fromInput);
 
             foreach (var obj in doc.Objects)
             {
                 if (obj?.Attributes == null || ReferenceEquals(obj, owner)) continue;
-                var band = Band(obj, dragType);
-                if (band < 0) continue;
-                _targets.Add(new Target(obj.Attributes, band));
+                var ports = Fitting(obj, dragType);
+                if (ports.Length == 0) continue;
+                _targets.Add(new Target(obj.Attributes, ports));
             }
         }
 
-        /// <summary>The best band any of the object's facing ports can offer, or -1 for none.</summary>
-        int Band(IGH_DocumentObject obj, string dragType)
+        /// <summary>
+        /// The object's facing ports that take the value as it is — the ones that get a dot.
+        /// A port that would convert it does not count: those are the ones that connect and
+        /// then quietly do something other than what was meant.
+        /// </summary>
+        IGH_Param[] Fitting(IGH_DocumentObject obj, string dragType)
         {
-            var best = 0;
+            var fits = new List<IGH_Param>();
             if (obj is IGH_Component component)
             {
                 // Dragging from an input wants something that produces, and vice versa.
                 var ports = _fromInput ? component.Params.Output : component.Params.Input;
-                if (ports == null) return -1;
-                foreach (var port in ports) best = Math.Max(best, Score(port, dragType));
+                if (ports != null)
+                    foreach (var port in ports)
+                        if (Takes(Score(port, dragType))) fits.Add(port);
             }
             else if (obj is IGH_Param param)
             {
-                best = Score(param, dragType);
+                if (Takes(Score(param, dragType))) fits.Add(param);
             }
-            else return -1;   // scribbles, groups, anything with nothing to connect
+            // anything else — scribbles, groups — has nothing to connect
 
-            return best > 0 ? TypeCompat.Band(best) : -1;
+            return fits.ToArray();
+        }
+
+        /// <summary>Band 1 is "converts", and converting is exactly what is not shown.</summary>
+        static bool Takes(int score) => score > 0 && TypeCompat.Band(score) != 1;
+
+        /// <summary>
+        /// Where the wire would actually land on that port. Grasshopper keeps the point on
+        /// the port's own attributes, so this is the same spot its own wires end at.
+        /// </summary>
+        PointF? Grip(IGH_Param port)
+        {
+            try
+            {
+                var attributes = port?.Attributes;
+                if (attributes == null) return null;
+                if (_fromInput)
+                    return attributes.HasOutputGrip ? attributes.OutputGrip : (PointF?)null;
+                return attributes.HasInputGrip ? attributes.InputGrip : (PointF?)null;
+            }
+            catch { return null; }
         }
 
         int Score(IGH_Param port, string dragType)
         {
             if (port == null) return 0;
-            var portType = TypeCompat.ShortName(SafeType(port));
-            return _fromInput
-                ? TypeCompat.Score(portType, dragType)   // it produces -> our input takes
-                : TypeCompat.Score(dragType, portType);  // our output -> it takes
+            var type = SafeType(port);
+            var portType = TypeCompat.ShortName(type);
+            if (_fromInput)
+            {
+                // It produces, our input takes — so it is judged on what it already carries.
+                var produced = TypeCompat.Score(portType, dragType);
+                return _probe == null ? produced : _probe.Apply(produced, port);
+            }
+
+            // Our output, its port takes — judged on the value we are dragging.
+            var accepted = TypeCompat.Score(dragType, portType);
+            return _values == null ? accepted : _values.Apply(accepted, type);
         }
 
         void OnPostPaintObjects(GH_Canvas sender)
@@ -145,16 +182,17 @@ namespace WireDrop.UI
                 viewport.ApplyProjection(g);
 
                 // Constant on screen however far the canvas is zoomed out.
-                var width = 2f / Math.Max(0.1f, viewport.Zoom);
+                var zoom = Math.Max(0.1f, viewport.Zoom);
+                var width = 2f / zoom;
                 var smoothing = g.SmoothingMode;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
 
-                // One pen per band rather than one per object: a busy canvas can put a
+                // One pen for the frame rather than one per object: a busy canvas can put a
                 // few hundred outlines on screen for every frame of the drag.
-                var pens = new Pen[Ink.Length];
-                for (int band = 0; band < pens.Length; band++)
-                    pens[band] = new Pen(Ink[band], width);
-
+                using var pen = new Pen(Green, width);
+                using var fill = new SolidBrush(Green);
+                using var rim = new Pen(Color.FromArgb(210, 255, 255, 255), width * 0.75f);
+                var radius = 4.5f / zoom;
                 try
                 {
                     foreach (var target in _targets)
@@ -163,16 +201,23 @@ namespace WireDrop.UI
                         if (bounds.IsEmpty) continue;
                         if (!viewport.IsVisible(ref bounds, 20f)) continue;
 
-                        bounds.Inflate(width + 1f, width + 1f);
-                        using var path = Outline(bounds, 3f + width);
-                        g.DrawPath(pens[target.Band], path);
+                        var outlined = bounds;
+                        outlined.Inflate(width + 1f, width + 1f);
+                        using (var path = Outline(outlined, 3f + width)) g.DrawPath(pen, path);
+
+                        // A dot on every port that takes it, so which one is never a guess.
+                        foreach (var port in target.Ports)
+                        {
+                            var grip = Grip(port);
+                            if (grip == null) continue;
+                            var dot = new RectangleF(grip.Value.X - radius, grip.Value.Y - radius,
+                                                     radius * 2f, radius * 2f);
+                            g.FillEllipse(fill, dot);
+                            g.DrawEllipse(rim, dot);
+                        }
                     }
                 }
-                finally
-                {
-                    foreach (var pen in pens) pen?.Dispose();
-                    g.SmoothingMode = smoothing;
-                }
+                finally { g.SmoothingMode = smoothing; }
             });
         }
 

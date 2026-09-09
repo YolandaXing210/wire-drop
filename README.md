@@ -36,8 +36,8 @@ dotnet build -c Release -p:RhinoSystemDir="/path/to/Rhino/System"
 
 | File | For |
 |---|---|
-| `wiredrop-0.2.0-rh8_0-any.yak` | Rhino's Package Manager |
-| `WireDrop-0.2.0.zip` | Manual install — contains the `.gha` and `INSTALL.txt` |
+| `wiredrop-0.3.0-rh8_0-any.yak` | Rhino's Package Manager |
+| `WireDrop-0.3.0.zip` | Manual install — contains the `.gha` and `INSTALL.txt` |
 
 A friend installs the `.yak` with Rhino running:
 
@@ -60,7 +60,7 @@ one-way, public action, so it is not part of `package.sh`.
 
 | | |
 |---|---|
-| Drag a port | Outlines everything on screen that could take the wire — green, yellow, blue by fit |
+| Drag a port | Outlines everything on screen that takes the wire as it is |
 | Drag a port to empty canvas | Opens the panel |
 | Type | Narrows the list |
 | Type a shortcut | `5` slider, `"x` panel, `~x` scribble, `3,4` point, `+` Addition |
@@ -81,7 +81,15 @@ Each row is a component and one of its ports, by full port name — *Construct P
 coordinate*, not *▸ X*. A component with several connectable ports contributes a row
 each, the first carrying the icon and name and the rest marked `↳`.
 
-The category row above the list shows every category, wrapping onto as many rows as it
+The category row wears whatever the ribbon above it wears. Grasshopper's own
+`RibbonDrawTabIcons` decides whether its tabs are drawn as icons or as names, and the row
+reads that same setting and uses the same icons, from
+`ComponentServer.GetCategoryIcon` — so the panel never disagrees with the ribbon about
+what a category looks like. **All** keeps its name in either mode, having no icon of its
+own to wear, and so does any third-party tab whose author never registered one: a chip
+falls back to its name rather than going blank.
+
+The row shows every category, wrapping onto as many rows as it
 needs, in Grasshopper's own ribbon order — Params, Maths, Sets, Vector, Curve, Surface,
 Mesh, Intersect, Transform, Display, then third-party tabs alphabetically. Names only;
 the totals are in the footer. Categories are still tallied across the unfiltered results,
@@ -195,22 +203,98 @@ Three deliberate differences from Grasshopper:
 - **Time, date and `PI` are left out.** Each sets a parsed value on one specific
   parameter, and mid-wire nobody is reaching for a date.
 
+### Reading what is actually on the wire
+
+The declared type is a promise about what a port carries; the value is the fact. A panel
+declares text and holds `3,4,5`; a generic parameter declares nothing at all. So the first
+value on the port is taken and offered to Grasshopper's own casting, `IGH_Goo.CastFrom` —
+the same call a wire makes at solve time, which gets third-party types right for free and
+discriminates properly: `3,4,5` casts to a point, a vector and a colour; `hello world`
+casts to none of them.
+
+Every port is asked, not only the vague ones, because the fact is always worth more than
+the promise. Reading the value is free: **the first item off a tree of a million took
+0.005 ms and allocated nothing** — `AllData` hands back a lazy enumerator and the first
+item ends it.
+
+`CastFrom` is where the cost is, and not where it looks. A cast that succeeds parses a
+string and returns; a cast that **fails** falls through to the secondary conversion, and
+Grasshopper's last guess there is that the text names an object in the Rhino document — so
+`GH_Point.CastFrom("hello world")` ends up in `FindRhinoObjectByNameAndType`, searching the
+open Rhino file. Failing is the common case here, since failing is how the filtering
+happens, and on a file holding tens of thousands of objects that search is not free.
+
+Measured on a 40,000 object Rhino model, the shape of the cost is stark:
+
+| the question | cost |
+|---|---|
+| text → a type the table rates possible | 0.01 – 0.6 ms |
+| text → a type the table rates **impossible** | **16 – 28 ms** |
+| any non-text value → anything | 0.02 ms |
+
+The expensive column is the object-name search, and it lands entirely on the ports the
+table already scores at zero. So the rule that avoids the cost is also the honest one:
+**the value is asked to settle doubt, not to overturn certainty or to invent a route the
+table has never heard of.** Concretely — a port whose declared type already matches is
+never asked, nor is one the table already rates direct; a port it rates *possible* is
+asked, since that is what doubt means; a port it rates impossible is asked only when the
+value is not text, where the question costs 20 microseconds instead of 20 milliseconds.
+
+On the drag that motivated all this — off a panel reading `3,4,5`, over that same
+40,000 object model — asking every type cost **27.8 ms** and asking only the doubtful ones
+costs **0.5 ms**.
+
+Two further guards: answers are cached per goo type, since a drag spans thousands of ports
+but only a hundred or so distinct types; and a drag may spend 25 ms casting and no more,
+after which the remaining ports are ranked on their declared types alone. Running out
+costs precision, not correctness — that ranking is where the plugin started.
+
+The answer decides the port both ways. A cast that works promotes it into the top band —
+whose heading then says which of the two answers put a row there. A cast that fails
+removes it, because connecting a panel reading `hello world` to a point input is not a
+weaker option, it is an error waiting to be made. <kbd>Tab</kbd> still widens the panel to
+the whole library, so nothing is permanently out of reach.
+
+A port that **takes anything** is left exactly as the type table had it, neither promoted
+nor dropped. Nothing is converted on the way into one, so nothing can fail there — and its
+declared type is `IGH_Goo`, which cannot be built to ask the question anyway. The same
+"no answer" applies to a third-party goo whose `CastFrom` throws: a failure to ask is not
+an answer of no, so the port keeps whatever the table gave it.
+
+Three limits worth knowing, since they decide where this helps:
+
+- **Both directions, read from different ends.** Dragging an output, the value is ours and
+  the question is which ports take it. Dragging an input, the value belongs to each
+  candidate — whatever its output is already carrying — and the question is which of those
+  come into ours: a panel reading `3,4,5` answers a Vector input, one reading
+  `hello world` does not. That second direction only reaches the canvas outlines, since
+  the panel's candidates come from the installed library and a component that is not on
+  the canvas is holding nothing to read.
+- **Only the first item.** A tree on that port may hold a hundred thousand.
+- **Only when there is something to read.** When the solution has not run, the port is
+  empty, or a solution is in flight, the type table answers alone. Casting is also
+  permissive — `3,4,5` casts to a number and a boolean as well as a point — so this
+  sharpens the list; it does not reduce it to one answer.
+
+Set `WireDrop.ReadValues` to false to fall back to the declared types.
+
 ### Where the wire could go
 
 While the wire is still on the cursor, every object on screen that could take it is
 outlined, so the answer is visible before the button is released rather than only
 afterwards in the panel. The colour says how well it fits:
 
-| | |
-|---|---|
-| **Green** | Direct — same type, or a lossless cast like Circle→Curve |
-| **Yellow** | Converts |
-| **Blue** | A port that simply takes anything |
+One colour, one meaning: **green is where the value goes in as it is** — the same type, a
+lossless cast like Circle→Curve, or a port that takes anything at all and converts nothing.
+Everything else is left dark, including ports that would connect through a conversion.
+Those are the ones that accept the wire and then quietly do something other than what was
+meant, so they are not worth pointing at.
 
-All three are solid. Grasshopper's casting is permissive enough that one colour would
-light up most of the canvas and say nothing, so the distinction is carried by hue rather
-than by fading the weaker fits — a blue outline is as legible as a green one, and which is
-which is still obvious at a glance. What cannot connect is not drawn at all.
+The outline says *this object*; a dot says *this port*. Every port that takes the value
+gets one, at the exact point Grasshopper would land the wire — its own `InputGrip` or
+`OutputGrip` — so a component with three number inputs shows three dots and which one to
+aim for is never a guess. Dropping on empty canvas still opens the panel; the dots are for
+when you can see the answer and would rather just finish the wire.
 
 The set is worked out once when the drag starts, since a document does not change
 mid-drag, and only tested for visibility per frame, since the viewport does. Nothing in

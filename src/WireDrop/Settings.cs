@@ -8,6 +8,25 @@ namespace WireDrop
         const string EnabledKey = "WireDrop.Enabled";
         const string FollowKey = "WireDrop.FollowCursor";
         const string HighlightKey = "WireDrop.HighlightTargets";
+        const string ReadValuesKey = "WireDrop.ReadValues";
+
+        /// <summary>
+        /// Whether the value on a generic or text port is read to sharpen the ranking.
+        /// Off falls back to the declared types alone.
+        /// </summary>
+        public static bool ReadValues
+        {
+            get { try { return Instances.Settings.GetValue(ReadValuesKey, true); } catch { return true; } }
+            set
+            {
+                try
+                {
+                    Instances.Settings.SetValue(ReadValuesKey, value);
+                    Instances.Settings.WritePersistentSettings();
+                }
+                catch (Exception ex) { Log.Error("settings-write", ex); }
+            }
+        }
 
         /// <summary>
         /// Whether components that could take the wire are outlined while it is dragged.

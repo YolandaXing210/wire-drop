@@ -12,6 +12,12 @@ namespace WireDrop.Ranking
     internal static class TypeCompat
     {
         public const int Exact = 100;
+        /// <summary>
+        /// A cast Grasshopper itself confirmed against the value on the wire. Above the
+        /// direct floor because it is the strongest evidence there is: not "these types
+        /// usually go together" but "this value goes into this port".
+        /// </summary>
+        public const int ValueFloor = 90;
         public const int DirectFloor = 85;
         public const int ConvertFloor = 55;
 
@@ -104,9 +110,17 @@ namespace WireDrop.Ranking
         public static int Band(int score) =>
             score >= DirectFloor ? 2 : score >= ConvertFloor ? 1 : 0;
 
-        public static string BandLabel(int band) => band switch
+        public static string BandLabel(int band) => BandLabel(band, false);
+
+        /// <param name="valueChecked">
+        /// True when the value on the wire was read, which puts confirmed casts in the top
+        /// band alongside the type matches — so the heading has to account for both.
+        /// </param>
+        public static string BandLabel(int band, bool valueChecked) => band switch
         {
-            2 => "direct — same type or lossless cast",
+            2 => valueChecked
+                ? "direct — same type, or checked against the value on the wire"
+                : "direct — same type or lossless cast",
             1 => "converts",
             _ => "generic / no conversion",
         };

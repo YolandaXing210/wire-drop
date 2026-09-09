@@ -9,6 +9,25 @@ public class TypeCompatTests
     [InlineData("Number", "Number")]
     public void SameTypeScoresExact(string a, string b) => Assert.Equal(100, TypeCompat.Score(a, b));
 
+    [Fact]
+    public void AVerifiedCastOutranksTheTableButNotAnExactMatch()
+    {
+        Assert.True(TypeCompat.ValueFloor > TypeCompat.DirectFloor);
+        Assert.True(TypeCompat.ValueFloor < TypeCompat.Exact);
+        Assert.Equal(2, TypeCompat.Band(TypeCompat.ValueFloor));
+    }
+
+    [Fact]
+    public void TheTopBandSaysSoOnlyWhenTheValueWasRead()
+    {
+        Assert.NotEqual(TypeCompat.BandLabel(2, false), TypeCompat.BandLabel(2, true));
+        Assert.Equal(TypeCompat.BandLabel(2), TypeCompat.BandLabel(2, false));
+
+        // Nothing was verified about the weaker bands, so they read the same either way.
+        Assert.Equal(TypeCompat.BandLabel(1, false), TypeCompat.BandLabel(1, true));
+        Assert.Equal(TypeCompat.BandLabel(0, false), TypeCompat.BandLabel(0, true));
+    }
+
     [Theory]
     [InlineData("Circle", "Curve")]   // a circle IS a curve
     [InlineData("Line", "Curve")]
