@@ -36,8 +36,8 @@ dotnet build -c Release -p:RhinoSystemDir="/path/to/Rhino/System"
 
 | File | For |
 |---|---|
-| `wiredrop-0.3.1-rh8_0-any.yak` | Rhino's Package Manager |
-| `WireDrop-0.3.1.zip` | Manual install — contains the `.gha` and `INSTALL.txt` |
+| `wiredrop-0.3.2-rh8_0-any.yak` | Rhino's Package Manager |
+| `WireDrop-0.3.2.zip` | Manual install — contains the `.gha` and `INSTALL.txt` |
 
 The zip is the one to hand to someone who would rather not open a terminal: unzip, drop
 the `.gha` into Grasshopper's Components folder (*File > Special Folders*), restart Rhino.
@@ -397,6 +397,21 @@ filtering, is what makes the list usable:
 1. **Band** — `direct` (same type or a lossless widening such as Circle→Curve),
    then `converts`, then `generic`. Banding on exact type alone was wrong: it buried
    *Divide Curve* under a dozen Circle params.
+
+   The test for the first band is whether anything actually happens to the value on the
+   way in. Nothing does when a point goes into a vector port — the same three numbers,
+   read as a direction instead of a position — nor between a transform and a matrix, nor
+   when a real number becomes a complex one. What stays in `converts` is what computes,
+   discards or invents something: text out of an object, a plane out of a point, a mesh
+   out of a brep, a surface out of a brep that may have more than one face.
+
+   A **geometry** port belongs in the first band and used to sit in the second, which
+   mattered once the canvas outlines stopped drawing conversions: dragging a point, a
+   component taking geometry simply went dark. A geometry port is a container, not a
+   converter — a point goes into one as a point. Which types count is not a list kept
+   here: the catalog asks each port whether its goo is an `IGH_GeometricGoo` as it reads
+   it and registers the answer, so a third-party geometry type arrives already
+   understood.
 2. **What you picked last time** for this same drag type, remembered in Grasshopper's settings.
 3. **Not obscure** — Grasshopper flags a large share of components as hidden from the ribbon.
 4. **Frequency**, then exposure, then name.

@@ -19,6 +19,8 @@ namespace WireDrop.Ranking
         /// </summary>
         public const int ValueFloor = 90;
         public const int DirectFloor = 85;
+        /// <summary>Anything geometric, arriving at a geometry port unchanged.</summary>
+        public const int Geometric = 90;
         public const int ConvertFloor = 55;
 
         /// <summary>destination port type -> { source type -> score }. "*" accepts anything.</summary>
@@ -27,9 +29,13 @@ namespace WireDrop.Ranking
         {
             ["Generic"]   = new() { ["*"] = 50 },
             ["Text"]      = new() { ["*"] = 60 },
-            ["Geometry"]  = new() { ["Point"] = 70, ["Curve"] = 70, ["Line"] = 70, ["Arc"] = 70,
-                                    ["Circle"] = 70, ["Rectangle"] = 70, ["Surface"] = 70,
-                                    ["Brep"] = 70, ["Mesh"] = 70, ["SubD"] = 70, ["Box"] = 70 },
+            // A geometry port is a container, not a converter: a point goes into one as a
+            // point. Scored direct for that reason, and extended at run time — see
+            // RegisterGeometric — so this list is a starting point, not the whole truth.
+            ["Geometry"]  = new() { ["Point"] = Geometric, ["Curve"] = Geometric, ["Line"] = Geometric,
+                                    ["Arc"] = Geometric, ["Circle"] = Geometric, ["Rectangle"] = Geometric,
+                                    ["Surface"] = Geometric, ["Brep"] = Geometric, ["Mesh"] = Geometric,
+                                    ["SubD"] = Geometric, ["Box"] = Geometric },
             ["Curve"]     = new() { ["Line"] = 90, ["Arc"] = 90, ["Circle"] = 90, ["Rectangle"] = 90,
                                     ["Surface"] = 55, ["Brep"] = 55 },
             ["Brep"]      = new() { ["Surface"] = 90, ["Box"] = 88, ["SubD"] = 70, ["Mesh"] = 60,
@@ -40,10 +46,15 @@ namespace WireDrop.Ranking
             ["Box"]       = new() { ["Brep"] = 60, ["Surface"] = 60, ["Mesh"] = 60 },
             ["Number"]    = new() { ["Integer"] = 90, ["Boolean"] = 70, ["Text"] = 55,
                                     ["Complex"] = 60, ["Domain"] = 55 },
+            // A real number is a complex one whose imaginary part is zero — the same
+            // widening as Integer to Number, and nothing is lost going in.
+            ["Complex"]   = new() { ["Number"] = 90, ["Integer"] = 88 },
             ["Integer"]   = new() { ["Number"] = 88, ["Boolean"] = 70, ["Text"] = 55 },
             ["Boolean"]   = new() { ["Number"] = 70, ["Integer"] = 70, ["Text"] = 55 },
-            ["Point"]     = new() { ["Vector"] = 75, ["Text"] = 55 },
-            ["Vector"]    = new() { ["Point"] = 75, ["Text"] = 55 },
+            // Three numbers either way. Reading them as a position or as a direction is a
+            // change of meaning, not of value: nothing is computed, nothing can fail.
+            ["Point"]     = new() { ["Vector"] = 90, ["Text"] = 55 },
+            ["Vector"]    = new() { ["Point"] = 90, ["Text"] = 55 },
             ["Plane"]     = new() { ["Point"] = 65, ["Circle"] = 70, ["Rectangle"] = 70 },
             ["Line"]      = new() { ["Curve"] = 60, ["Rectangle"] = 55 },
             ["Circle"]    = new() { ["Arc"] = 70, ["Curve"] = 55 },
@@ -51,9 +62,9 @@ namespace WireDrop.Ranking
             ["Rectangle"] = new() { ["Curve"] = 55, ["Plane"] = 55 },
             ["Domain"]    = new() { ["Number"] = 70, ["Integer"] = 70, ["Text"] = 55 },
             ["Colour"]    = new() { ["Text"] = 60, ["Number"] = 55, ["Integer"] = 55 },
-            ["Transform"] = new() { ["Matrix"] = 70 },
-            ["Matrix"]    = new() { ["Transform"] = 70 },
-            ["Complex"]   = new() { ["Number"] = 70, ["Integer"] = 65 },
+            // The same sixteen numbers under two names.
+            ["Transform"] = new() { ["Matrix"] = 90 },
+            ["Matrix"]    = new() { ["Transform"] = 90 },
         };
 
         static readonly Dictionary<string, string> Alias = new(StringComparer.Ordinal)
@@ -70,6 +81,23 @@ namespace WireDrop.Ranking
             ["Colour"] = "Colour",
             ["Color"] = "Colour",
         };
+
+        /// <summary>
+        /// Records that a type is geometry, so that it reaches a geometry port directly.
+        ///
+        /// Which types those are is not written down here: the catalog asks each port
+        /// whether its goo is an <c>IGH_GeometricGoo</c> as it reads it, and says so. That
+        /// keeps this correct for geometry types nobody here has heard of — a third-party
+        /// one arrives already knowing it belongs. Kept as strings so the scoring stays
+        /// free of Grasshopper types and testable without a Rhino install.
+        /// </summary>
+        public static void RegisterGeometric(string typeName)
+        {
+            typeName = Normalise(typeName);
+            if (string.IsNullOrEmpty(typeName)) return;
+            if (string.Equals(typeName, "Geometry", StringComparison.Ordinal)) return;
+            Accept["Geometry"][typeName] = Geometric;
+        }
 
         /// <summary>Turns a goo type such as GH_Curve into the short name the table uses.</summary>
         public static string ShortName(Type gooType)

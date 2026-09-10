@@ -4,6 +4,7 @@ using System.Linq;
 using Grasshopper;
 using Rhino;
 using Grasshopper.Kernel;
+using Grasshopper.Kernel.Types;
 using WireDrop.Ranking;
 
 namespace WireDrop.Catalog
@@ -151,6 +152,12 @@ namespace WireDrop.Catalog
             Type goo = null;
             try { goo = param.Type; } catch { }
             var shortName = TypeCompat.ShortName(goo);
+
+            // Asked of the type itself rather than looked up in a list of names we happen
+            // to know, so a third-party geometry type is understood the first time it is seen.
+            var isGeometric = goo != null && typeof(IGH_GeometricGoo).IsAssignableFrom(goo);
+            if (isGeometric) TypeCompat.RegisterGeometric(shortName);
+
             return new PortSpec
             {
                 Index = index,
@@ -160,6 +167,7 @@ namespace WireDrop.Catalog
                 GooType = goo,
                 TypeName = shortName,
                 IsGeneric = string.Equals(shortName, "Generic", StringComparison.Ordinal),
+                IsGeometric = isGeometric,
             };
         }
     }

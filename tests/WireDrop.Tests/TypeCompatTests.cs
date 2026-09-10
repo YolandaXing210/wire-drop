@@ -9,6 +9,40 @@ public class TypeCompatTests
     [InlineData("Number", "Number")]
     public void SameTypeScoresExact(string a, string b) => Assert.Equal(100, TypeCompat.Score(a, b));
 
+    [Theory]
+    [InlineData("Point")]
+    [InlineData("Curve")]
+    [InlineData("Brep")]
+    [InlineData("Mesh")]
+    [InlineData("Box")]
+    public void GeometryTakesGeometryAsItIs(string from)
+    {
+        // A geometry port is a container, not a converter: scoring these as conversions
+        // dropped them out of the canvas outlines, which only draw what goes in unchanged.
+        var score = TypeCompat.Score(from, "Geometry");
+        Assert.True(score >= TypeCompat.DirectFloor, $"{from}->Geometry scored {score}");
+        Assert.Equal(2, TypeCompat.Band(score));
+    }
+
+    [Fact]
+    public void AGeometryTypeNobodyHasHeardOfCanSaySoItself()
+    {
+        Assert.Equal(0, TypeCompat.Score("Voxel", "Geometry"));
+
+        TypeCompat.RegisterGeometric("Voxel");
+
+        Assert.Equal(2, TypeCompat.Band(TypeCompat.Score("Voxel", "Geometry")));
+        // and only into geometry — registering says nothing about anywhere else
+        Assert.Equal(0, TypeCompat.Score("Voxel", "Curve"));
+    }
+
+    [Fact]
+    public void ANonGeometryTypeStillDoesNotReachAGeometryPort()
+    {
+        Assert.Equal(0, TypeCompat.Score("Number", "Geometry"));
+        Assert.Equal(0, TypeCompat.Score("Colour", "Geometry"));
+    }
+
     [Fact]
     public void AVerifiedCastOutranksTheTableButNotAnExactMatch()
     {
@@ -33,6 +67,11 @@ public class TypeCompatTests
     [InlineData("Line", "Curve")]
     [InlineData("Integer", "Number")]
     [InlineData("Surface", "Brep")]
+    [InlineData("Point", "Vector")]      // three numbers either way, nothing computed
+    [InlineData("Vector", "Point")]
+    [InlineData("Transform", "Matrix")]  // the same sixteen numbers under two names
+    [InlineData("Matrix", "Transform")]
+    [InlineData("Number", "Complex")]    // a real is a complex with no imaginary part
     public void LosslessWideningLandsInTheDirectBand(string from, string to)
     {
         var score = TypeCompat.Score(from, to);
@@ -41,7 +80,7 @@ public class TypeCompatTests
     }
 
     [Theory]
-    [InlineData("Curve", "Geometry")]
+    [InlineData("Mesh", "Brep")]      // meshing is a real conversion, and can lose you something
     [InlineData("Number", "Colour")]
     [InlineData("Point", "Plane")]
     public void RealConversionsLandInTheMiddleBand(string from, string to)

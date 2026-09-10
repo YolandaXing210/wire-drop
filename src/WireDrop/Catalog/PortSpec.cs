@@ -15,6 +15,8 @@ namespace WireDrop.Catalog
         /// <summary>Short name used by the cast table, e.g. "Curve".</summary>
         public string TypeName;
         public bool IsGeneric;
+        /// <summary>Grasshopper calls its goo an IGH_GeometricGoo, so a geometry port takes it.</summary>
+        public bool IsGeometric;
 
         public string Label => string.IsNullOrEmpty(NickName) ? Name : NickName;
     }
