@@ -17,6 +17,11 @@ namespace WireDrop.Catalog
         public GH_Exposure Exposure;
         /// <summary>Grasshopper hides these from the ribbon; they rank below everything else.</summary>
         public bool Obscure;
+        /// <summary>
+        /// Obsolete, or hidden outright by whoever wrote it. Kept out of the compatible
+        /// list and out of search, and reachable only by asking for everything with Tab.
+        /// </summary>
+        public bool Hidden;
         public PortSpec[] Inputs = Array.Empty<PortSpec>();
         public PortSpec[] Outputs = Array.Empty<PortSpec>();
 

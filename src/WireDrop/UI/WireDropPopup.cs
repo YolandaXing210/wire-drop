@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Linq;
 using System.Windows.Forms;
 using Grasshopper;
@@ -51,8 +52,9 @@ namespace WireDrop.UI
         bool _dismissable;
         Rectangle[] _chipBounds = Array.Empty<Rectangle>();
         string[] _chipNames = Array.Empty<string>();
+        /// <summary>Categories the search text currently reaches nothing in.</summary>
+        bool[] _chipFaded = Array.Empty<bool>();
         int _catH;
-        readonly Dictionary<bool, int> _reservedCatH = new Dictionary<bool, int>();
 
         /// <summary>
         /// Whether the category row wears icons rather than names. Not a setting of ours:
@@ -229,41 +231,33 @@ namespace WireDrop.UI
         }
 
         /// <summary>
-        /// Every category is shown, wrapping onto as many rows as it takes. The reserved
-        /// height comes from the unfiltered set for the current scope, so the panel does
-        /// not jump about as typing narrows the categories down.
+        /// Every category the wire can reach, wrapping onto as many rows as it takes. The
+        /// set does not depend on what has been typed — the row answers where this wire can
+        /// go, and typing narrows the list under it rather than making places disappear.
+        /// That also settles the height once per scope, so the list never moves under the
+        /// cursor while you type. Categories the text reaches nothing in are faded, so the
+        /// row stays complete without being misleading.
         /// </summary>
         void LayoutCategories()
         {
             var names = new List<string> { null };
-            foreach (var c in _hits.Categories) names.Add(c.Name);
+            var faded = new List<bool> { false };
+            foreach (var c in _hits.Categories)
+            {
+                names.Add(c.Name);
+                faded.Add(c.Matches == 0);
+            }
 
             var widths = names.Select(ChipWidth).ToArray();
             _chipBounds = ChipFlow.Arrange(widths, _m.Width, _m.ChipH, _m.ChipGap, _m.Pad, 5);
             _chipNames = names.ToArray();
+            _chipFaded = faded.ToArray();
 
-            // Reserve the height the unfiltered set needs. Sizing to the visible chips
-            // would shrink the row as typing narrows the categories, moving the list up
-            // under the cursor on every keystroke.
-            var height = ReservedCategoryHeight();
+            var height = ChipFlow.Height(_chipBounds, _m.ChipH, 5);
             if (height == _catH) return;
 
             _catH = height;
             ResizeToFit();
-        }
-
-        int ReservedCategoryHeight()
-        {
-            if (_reservedCatH.TryGetValue(_showAll, out var cached)) return cached;
-
-            var unfiltered = HitBuilder.Build(_dragType, _fromInput, string.Empty, _showAll, null, _values);
-            var widths = new List<int> { ChipWidth(null) };
-            foreach (var c in unfiltered.Categories) widths.Add(ChipWidth(c.Name));
-
-            var arranged = ChipFlow.Arrange(widths.ToArray(), _m.Width, _m.ChipH, _m.ChipGap, _m.Pad, 5);
-            var height = ChipFlow.Height(arranged, _m.ChipH, 5);
-            _reservedCatH[_showAll] = height;
-            return height;
         }
 
         const string AllLabel = "All";
@@ -570,32 +564,46 @@ namespace WireDrop.UI
 
                 var bounds = _o._chipBounds;
                 var names = _o._chipNames;
+                var faded = _o._chipFaded;
                 for (int i = 0; i < bounds.Length && i < names.Length; i++)
                 {
                     var selected = string.Equals(_o._category, names[i], StringComparison.Ordinal);
-                    DrawChip(g, p, bounds[i], names[i], selected);
+                    DrawChip(g, p, bounds[i], names[i], selected, i < faded.Length && faded[i]);
                 }
             }
 
-            void DrawChip(Graphics g, Palette p, Rectangle rect, string category, bool selected)
+            void DrawChip(Graphics g, Palette p, Rectangle rect, string category, bool selected,
+                          bool faded)
             {
-                using (var b = new SolidBrush(selected ? p.ChipSel : p.Chip)) FillRounded(g, b, rect, 3);
+                var back = selected ? p.ChipSel : p.Chip;
+                if (faded) back = Color.FromArgb(105, back);
+                using (var b = new SolidBrush(back)) FillRounded(g, b, rect, 3);
 
                 var icon = _o.CategoryIcon(category);
                 if (icon != null)
                 {
                     var side = Math.Min(rect.Height - 4, rect.Width - 4);
+                    var dest = new Rectangle(rect.X + (rect.Width - side) / 2,
+                                             rect.Y + (rect.Height - side) / 2, side, side);
                     try
                     {
-                        g.DrawImage(icon, new Rectangle(rect.X + (rect.Width - side) / 2,
-                                                        rect.Y + (rect.Height - side) / 2, side, side));
+                        if (!faded) g.DrawImage(icon, dest);
+                        else
+                        {
+                            using var attributes = new ImageAttributes();
+                            attributes.SetColorMatrix(new ColorMatrix { Matrix33 = 0.35f });
+                            g.DrawImage(icon, dest, 0, 0, icon.Width, icon.Height,
+                                        GraphicsUnit.Pixel, attributes);
+                        }
                     }
                     catch { }
                     return;
                 }
 
                 var text = category ?? AllLabel;
-                using var br = new SolidBrush(selected ? p.ChipSelText : p.ChipText);
+                var ink = selected ? p.ChipSelText : p.ChipText;
+                if (faded) ink = Color.FromArgb(105, ink);
+                using var br = new SolidBrush(ink);
                 var fmt = new StringFormat
                 {
                     Trimming = StringTrimming.EllipsisCharacter,

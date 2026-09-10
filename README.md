@@ -36,8 +36,8 @@ dotnet build -c Release -p:RhinoSystemDir="/path/to/Rhino/System"
 
 | File | For |
 |---|---|
-| `wiredrop-0.3.0-rh8_0-any.yak` | Rhino's Package Manager |
-| `WireDrop-0.3.0.zip` | Manual install — contains the `.gha` and `INSTALL.txt` |
+| `wiredrop-0.3.1-rh8_0-any.yak` | Rhino's Package Manager |
+| `WireDrop-0.3.1.zip` | Manual install — contains the `.gha` and `INSTALL.txt` |
 
 The zip is the one to hand to someone who would rather not open a terminal: unzip, drop
 the `.gha` into Grasshopper's Components folder (*File > Special Folders*), restart Rhino.
@@ -74,7 +74,7 @@ one-way, public action, so it is not part of `package.sh`.
 | <kbd>↑</kbd> <kbd>↓</kbd> | Move selection |
 | <kbd>PgUp</kbd> <kbd>PgDn</kbd> | Jump a screen |
 | <kbd>←</kbd> <kbd>→</kbd> | Walk the category row |
-| <kbd>Tab</kbd> | Widen past compatible components to the whole library |
+| <kbd>Tab</kbd> | Everything: the whole library, every port, obsolete objects included |
 | <kbd>Enter</kbd> / click | Place the component and wire it |
 | Move, then click | Choose where it lands — it rides the cursor until you click |
 | <kbd>Esc</kbd> | Cancel |
@@ -96,12 +96,18 @@ what a category looks like. **All** keeps its name in either mode, having no ico
 own to wear, and so does any third-party tab whose author never registered one: a chip
 falls back to its name rather than going blank.
 
-The row shows every category, wrapping onto as many rows as it
-needs, in Grasshopper's own ribbon order — Params, Maths, Sets, Vector, Curve, Surface,
-Mesh, Intersect, Transform, Display, then third-party tabs alphabetically. Names only;
-the totals are in the footer. Categories are still tallied across the unfiltered results,
-so choosing one never hides where the rest went, and the row keeps a fixed height so the
-list does not jump while you type.
+The row shows every category the wire can reach, wrapping onto as many rows as it needs,
+in Grasshopper's own ribbon order — Params, Maths, Sets, Vector, Curve, Surface, Mesh,
+Intersect, Transform, Display, then third-party tabs alphabetically. The totals are in the
+footer.
+
+What the row shows does not depend on what has been typed. It answers *where can this wire
+go*; typing narrows the list underneath it rather than making places disappear, and
+choosing a category never hides where the rest went. Categories the current text reaches
+nothing in are faded rather than dropped, so the row stays complete without being
+misleading. Since the set only changes when <kbd>Tab</kbd> changes the scope, its height
+settles once and the list below never moves under the cursor mid-word — which used to need
+a second pass over the whole library on every keystroke to reserve the space.
 
 Grasshopper does not expose that order: the component server keeps categories in a
 SortedList keyed by name, so registration order is lost before anything can read it.
@@ -398,6 +404,21 @@ filtering, is what makes the list usable:
 A component contributes one row per compatible port — *Construct Point* offers X, Y
 and Z — but only ports in its own band, so a Number drag no longer suggests
 *Blend Colours ▸ Colour A*.
+
+### What Tab means
+
+Everything, and it had to be made to mean that. Two filters used to survive it. A
+component only ever offered the ports in its own best band, so a Number drag on *Circle
+CNR* listed Radius and never Center or Normal even when asked for everything — reasonable
+as a courtesy in the compatible list, wrong as a rule. And the catalog dropped obsolete and
+hidden objects when it was built, which put them out of reach of any search at all: on this
+machine that is **497 of 2132 installed objects, 23% of the library**, gone.
+
+Both are lifted now. Obsolete and hidden objects are kept, marked, held out of the
+compatible list and out of search, and sorted below everything else when Tab does ask for
+them. What Tab still will not show you is an object Grasshopper cannot instantiate — those
+never make it into the catalog, because the only way to read a component's ports is to
+build one.
 
 ## Tests
 

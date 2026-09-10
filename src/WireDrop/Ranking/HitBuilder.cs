@@ -39,8 +39,17 @@ namespace WireDrop.Ranking
             var wantInputs = !fromInput;
 
             var groups = new List<Group>();
+
+            // Tallied before the search text is applied, so the row answers "where can this
+            // wire go" rather than "what did you just type". Typing narrows the list under
+            // it; it does not make places disappear.
+            var reach = new Dictionary<string, CategoryTally>(StringComparer.Ordinal);
+
             foreach (var entry in catalog.Entries)
             {
+                // What Grasshopper itself hides stays hidden until Tab asks for everything.
+                if (entry.Hidden && !showAll) continue;
+
                 var ports = entry.PortsOn(wantInputs);
                 if (ports.Length == 0) continue;
 
@@ -64,9 +73,18 @@ namespace WireDrop.Ranking
 
                 // A component earns its place on its best port; showing its weaker ports too
                 // padded the list with things like "Blend Colours -> Colour A" for a Number.
+                // That is a courtesy of the compatible list, though, not a rule: Tab asked
+                // for everything, and everything includes a component's other ports.
                 var band = TypeCompat.Band(best);
-                matched = matched.Where(m => TypeCompat.Band(m.Score) == band).ToList();
-                if (matched.Count == 0) continue;
+                if (!showAll)
+                {
+                    matched = matched.Where(m => TypeCompat.Band(m.Score) == band).ToList();
+                    if (matched.Count == 0) continue;
+                }
+
+                if (!reach.TryGetValue(entry.Category, out var tally))
+                    reach[entry.Category] = tally = new CategoryTally { Name = entry.Category };
+                tally.Count += matched.Count;
 
                 var textScore = 0;
                 if (hasQuery)
@@ -76,6 +94,8 @@ namespace WireDrop.Ranking
                         : Fuzzy.Score(entry.Name, entry.NickName, entry.Category, entry.SubCategory, q);
                     if (textScore <= 0) continue;
                 }
+
+                tally.Matches += matched.Count;
 
                 matched.Sort((a, b) => b.Score != a.Score ? b.Score - a.Score : a.Port.Index - b.Port.Index);
 
@@ -92,11 +112,8 @@ namespace WireDrop.Ranking
 
             groups.Sort((a, b) => Compare(a, b, hasQuery));
 
-            // Tallied across every group, so selecting a category never hides the others,
-            // and ordered like Grasshopper's ribbon so the row does not reshuffle as counts change.
-            var categories = groups
-                .GroupBy(g => g.Entry.Category, StringComparer.Ordinal)
-                .Select(gr => new CategoryTally { Name = gr.Key, Count = gr.Sum(g => g.Ports.Count) })
+            // Ordered like Grasshopper's ribbon, so the row never reshuffles under the cursor.
+            var categories = reach.Values
                 .OrderBy(c => c.Name, Comparer<string>.Create(CategoryOrder.Compare))
                 .ToArray();
 
@@ -150,6 +167,7 @@ namespace WireDrop.Ranking
             var rb = b.Recent < 0 ? int.MaxValue : b.Recent;
             if (ra != rb) return ra - rb;
 
+            if (a.Entry.Hidden != b.Entry.Hidden) return a.Entry.Hidden ? 1 : -1;
             if (a.Entry.Obscure != b.Entry.Obscure) return a.Entry.Obscure ? 1 : -1;
             if (a.Entry.Popularity != b.Entry.Popularity) return a.Entry.Popularity - b.Entry.Popularity;
             if (a.Entry.Exposure != b.Entry.Exposure) return (int)a.Entry.Exposure - (int)b.Entry.Exposure;

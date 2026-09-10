@@ -31,7 +31,10 @@ namespace WireDrop.Ranking
     internal sealed class CategoryTally
     {
         public string Name;
+        /// <summary>Ports this wire can reach in the category, whatever is typed.</summary>
         public int Count;
+        /// <summary>How many of those survive the current search text.</summary>
+        public int Matches;
     }
 
     internal sealed class HitList

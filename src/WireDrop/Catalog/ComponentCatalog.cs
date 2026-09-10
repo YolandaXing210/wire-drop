@@ -85,8 +85,12 @@ namespace WireDrop.Catalog
             // component must not cost us the rest of the library.
             try
             {
-                if (proxy == null || proxy.Obsolete) return;
-                if (proxy.Exposure == GH_Exposure.hidden) return;
+                if (proxy == null) return;
+
+                // Obsolete and hidden objects are kept rather than dropped, so that Tab can
+                // mean everything. They are marked, and stay out of the list until asked for.
+                var hidden = proxy.Obsolete || proxy.Exposure == GH_Exposure.hidden;
+
                 var desc = proxy.Desc;
                 if (desc == null || string.IsNullOrWhiteSpace(desc.Name)) return;
 
@@ -120,6 +124,7 @@ namespace WireDrop.Catalog
                     Icon = proxy.Icon,
                     Exposure = proxy.Exposure,
                     Obscure = ((int)proxy.Exposure & (int)GH_Exposure.obscure) != 0,
+                    Hidden = hidden,
                     Inputs = inputs,
                     Outputs = outputs,
                     Popularity = _popularity.TryGetValue(desc.Name, out var p) ? p : int.MaxValue,
