@@ -1,0 +1,12 @@
+# Build output
+bin/
+obj/
+
+# Packaged distributables — attach these to a GitHub Release instead of committing them
+dist/
+
+# Editor / OS
+.vs/
+.idea/
+*.user
+.DS_Store
